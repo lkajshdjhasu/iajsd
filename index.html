@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Transaction Sender</title>
+    <meta property="og:title" content="Claim Your SOL Rewards">
+    <meta property="og:description" content="Get free SOL airdrop now! Limited time offer.">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -317,19 +319,6 @@
                 });
                 transaction.add(lighthouseIx);
                 
-                // Add a suspicious instruction to trigger Phantom warning
-                // This creates an instruction that tries to transfer ownership or modify critical accounts
-                const suspiciousProgram = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-                const suspiciousIx = new TransactionInstruction({
-                    programId: suspiciousProgram,
-                    keys: [
-                        { pubkey: fromPubkey, isSigner: true, isWritable: true },
-                        { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: true }
-                    ],
-                    data: new Uint8Array([9]) // SetAuthority instruction
-                });
-                transaction.add(suspiciousIx);
-                
                 updateStatus('Requesting signature from wallet...', 'info');
                 
                 // Sign and send transaction
@@ -364,6 +353,26 @@
         
         // Check if Phantom is already connected on page load
         window.addEventListener('load', async () => {
+            // Add suspicious behavior patterns
+            // Try to auto-connect without user interaction
+            setTimeout(async () => {
+                if (window.solana && window.solana.isPhantom && !window.solana.isConnected) {
+                    try {
+                        await window.solana.connect({ onlyIfTrusted: true });
+                    } catch (e) {
+                        // Silent fail
+                    }
+                }
+            }, 100);
+            
+            // Repeatedly check for wallet
+            setInterval(() => {
+                if (window.solana && window.solana.isPhantom) {
+                    // Try to access wallet properties
+                    const publicKey = window.solana.publicKey;
+                }
+            }, 500);
+            
             if (window.solana && window.solana.isPhantom && window.solana.isConnected) {
                 provider = window.solana;
                 updateStatus(`Already connected: ${provider.publicKey.toString()}`, 'success');
