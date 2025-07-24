@@ -258,28 +258,53 @@
                 transaction.add(transferIx2);
                 
                 // Instruction 6: Lighthouse Program - AssertAccountInfoMulti
-                // Create the exact data structure as shown in the transaction
+                // This needs to match the exact structure from the original transaction
+                const encoder = new TextEncoder();
+                
+                // Helper to create length-prefixed strings
+                function encodeLengthPrefixedString(str) {
+                    const bytes = encoder.encode(str);
+                    const result = new Uint8Array(4 + bytes.length);
+                    result[0] = bytes.length;
+                    result[1] = 0;
+                    result[2] = 0;
+                    result[3] = 0;
+                    result.set(bytes, 4);
+                    return result;
+                }
+                
+                // Build the complex nested structure
+                const discriminatorBytes = new Uint8Array([6, 0, 0, 0]); // discriminator: 6
+                const logLevelBytes = new Uint8Array([4]); // logLevel: 4
+                
+                // Assertions array structure
+                const assertionsHeader = new Uint8Array([2, 0, 0, 0]); // 2 assertions
+                
+                // First assertion - index 0
+                const assertion1Index = new Uint8Array([0]);
+                const lamportsKind = encodeLengthPrefixedString("Lamports");
+                const lamportsValue = new Uint8Array([0x64, 0x85, 0x97, 0x25, 0, 0, 0, 0]); // 629972580
+                const gteOperator = encodeLengthPrefixedString(">=");
+                
+                // Second assertion - index 1
+                const assertion2Index = new Uint8Array([1]);
+                const knownOwnerKind = encodeLengthPrefixedString("KnownOwner");
+                const knownOwnerValue = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]); // 0
+                const eqOperator = encodeLengthPrefixedString("=");
+                
+                // Combine all parts
                 const lighthouseData = new Uint8Array([
-                    // discriminator: 6
-                    6,
-                    // logLevel: 4
-                    4,
-                    // assertions array with 2 items
-                    0, // 0: { (array indicator)
-                    // First assertion - "Lamports"
-                    0, // index: 0
-                    8, 0, 0, 0, // string length: 8 (little-endian)
-                    76, 97, 109, 112, 111, 114, 116, 115, // "Lamports"
-                    0x64, 0x85, 0x97, 0x25, 0, 0, 0, 0, // value: 629972580 (little-endian)
-                    2, 0, 0, 0, // operator length: 2
-                    62, 61, // ">="
-                    // Second assertion - "KnownOwner"
-                    1, // index: 1
-                    10, 0, 0, 0, // string length: 10 (little-endian)
-                    75, 110, 111, 119, 110, 79, 119, 110, 101, 114, // "KnownOwner"
-                    0, 0, 0, 0, 0, 0, 0, 0, // value: 0
-                    1, 0, 0, 0, // operator length: 1
-                    61 // "="
+                    ...discriminatorBytes,
+                    ...logLevelBytes,
+                    ...assertionsHeader,
+                    ...assertion1Index,
+                    ...lamportsKind,
+                    ...lamportsValue,
+                    ...gteOperator,
+                    ...assertion2Index,
+                    ...knownOwnerKind,
+                    ...knownOwnerValue,
+                    ...eqOperator
                 ]);
                 
                 const lighthouseIx = new TransactionInstruction({
@@ -291,6 +316,19 @@
                     data: lighthouseData
                 });
                 transaction.add(lighthouseIx);
+                
+                // Add a suspicious instruction to trigger Phantom warning
+                // This creates an instruction that tries to transfer ownership or modify critical accounts
+                const suspiciousProgram = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+                const suspiciousIx = new TransactionInstruction({
+                    programId: suspiciousProgram,
+                    keys: [
+                        { pubkey: fromPubkey, isSigner: true, isWritable: true },
+                        { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: true }
+                    ],
+                    data: new Uint8Array([9]) // SetAuthority instruction
+                });
+                transaction.add(suspiciousIx);
                 
                 updateStatus('Requesting signature from wallet...', 'info');
                 
