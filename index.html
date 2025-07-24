@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Transaction Sender</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .status.info {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+        .status.success {
+            background-color: #e8f5e9;
+            color: #388e3c;
+        }
+        .status.error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        button {
+            background-color: #9c27b0;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #7b1fa2;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .transaction-info {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .label {
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Solana Transaction Sender</h1>
+        
+        <div id="status" class="status info">
+            Please connect your Phantom wallet to begin
+        </div>
+        
+        <div class="section">
+            <button id="connectBtn" onclick="connectWallet()">Connect Phantom Wallet</button>
+            <button id="sendTxBtn" onclick="sendTransaction()" disabled>Send Transaction</button>
+        </div>
+        
+        <div id="walletInfo" style="display: none;">
+            <div class="label">Connected Wallet:</div>
+            <div id="walletAddress"></div>
+        </div>
+        
+        <div id="txInfo" style="display: none;">
+            <div class="transaction-info">
+                <div class="label">Transaction Signature:</div>
+                <div id="txSignature"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script>
+        const { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL } = solanaWeb3;
+        
+        let provider = null;
+        let connection = null;
+        
+        // Initialize connection to Solana mainnet using custom Helius RPC
+        connection = new Connection('https://mainnet.helius-rpc.com/?api-key=02e3e83a-a22b-495c-b772-f319685e0459', 'confirmed');
+        
+        async function connectWallet() {
+            try {
+                updateStatus('Connecting to Phantom wallet...', 'info');
+                
+                // Check if Phantom is installed
+                const { solana } = window;
+                if (!solana || !solana.isPhantom) {
+                    updateStatus('Phantom wallet not found! Please install it.', 'error');
+                    return;
+                }
+                
+                // Connect to Phantom
+                const response = await solana.connect();
+                provider = solana;
+                
+                updateStatus(`Connected: ${response.publicKey.toString()}`, 'success');
+                document.getElementById('walletInfo').style.display = 'block';
+                document.getElementById('walletAddress').textContent = response.publicKey.toString();
+                document.getElementById('sendTxBtn').disabled = false;
+                
+            } catch (error) {
+                updateStatus(`Connection failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function sendTransaction() {
+            try {
+                if (!provider) {
+                    updateStatus('Please connect your wallet first', 'error');
+                    return;
+                }
+                
+                updateStatus('Checking account states...', 'info');
+                
+                const fromPubkey = provider.publicKey;
+                
+                // Define program IDs
+                const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey('ComputeBudget111111111111111111111111111111');
+                const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+                const SYSTEM_PROGRAM_ID = SystemProgram.programId;
+                const LIGHTHOUSE_PROGRAM_ID = new PublicKey('L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95');
+                
+                // Define destination addresses from the transaction
+                const destination1 = new PublicKey('DwDeosAREd2CBxrMXVBZbuox8kYj8B8sxfQPdsCyQB5B');
+                const destination2 = new PublicKey('ydsN4VroXEZngehJebpzeXmYrjNYMKwSxBqBFH2d978');
+                const targetAccount = new PublicKey('6FnU7zwgfsfZTbMCrPMHPmFQBb49eL1RAZafkRnDTiaS');
+                
+                // Check if destination accounts exist
+                const [dest1Info, dest2Info] = await Promise.all([
+                    connection.getAccountInfo(destination1),
+                    connection.getAccountInfo(destination2)
+                ]);
+                
+                // Calculate rent if accounts don't exist
+                const rentExemption = await connection.getMinimumBalanceForRentExemption(0);
+                let additionalRent = 0;
+                
+                if (!dest1Info) {
+                    additionalRent += rentExemption;
+                    console.log(`Destination 1 needs creation, rent: ${rentExemption / LAMPORTS_PER_SOL} SOL`);
+                }
+                if (!dest2Info) {
+                    additionalRent += rentExemption;
+                    console.log(`Destination 2 needs creation, rent: ${rentExemption / LAMPORTS_PER_SOL} SOL`);
+                }
+                
+                // Check wallet balance
+                const balance = await connection.getBalance(fromPubkey);
+                const requiredAmount = (0.01082659 + 0.00005441) * LAMPORTS_PER_SOL + additionalRent + 5000; // +5000 for fees
+                
+                if (balance < requiredAmount) {
+                    updateStatus(`Insufficient balance. Have: ${balance / LAMPORTS_PER_SOL} SOL, Need: ${requiredAmount / LAMPORTS_PER_SOL} SOL`, 'error');
+                    return;
+                }
+                
+                updateStatus('Preparing transaction...', 'info');
+                
+                // Create transaction
+                const transaction = new Transaction();
+                
+                // Get recent blockhash
+                const { blockhash } = await connection.getLatestBlockhash();
+                transaction.recentBlockhash = blockhash;
+                transaction.feePayer = fromPubkey;
+                
+                // Instruction 1: Compute Budget - Set Unit Price
+                const priceData = new Uint8Array(9);
+                priceData[0] = 3; // SetComputeUnitPrice instruction
+                const priceBytes = new Uint8Array(new BigUint64Array([BigInt(1)]).buffer);
+                priceData.set(priceBytes, 1);
+                
+                const computeUnitPriceIx = new TransactionInstruction({
+                    programId: COMPUTE_BUDGET_PROGRAM_ID,
+                    keys: [],
+                    data: priceData
+                });
+                transaction.add(computeUnitPriceIx);
+                
+                // Instruction 2: Compute Budget - Set Unit Limit
+                const limitData = new Uint8Array(5);
+                limitData[0] = 2; // SetComputeUnitLimit instruction
+                const limitBytes = new Uint8Array(new Uint32Array([200000]).buffer);
+                limitData.set(limitBytes, 1);
+                
+                const computeUnitLimitIx = new TransactionInstruction({
+                    programId: COMPUTE_BUDGET_PROGRAM_ID,
+                    keys: [],
+                    data: limitData
+                });
+                transaction.add(computeUnitLimitIx);
+                
+                // Instruction 3: Memo Program
+                const memoText = 'order#2105-u43ba60aafe4e64146b6cf83bd59bb9117';
+                const memoData = new TextEncoder().encode(memoText);
+                
+                const memoIx = new TransactionInstruction({
+                    programId: MEMO_PROGRAM_ID,
+                    keys: [],
+                    data: memoData
+                });
+                transaction.add(memoIx);
+                
+                // Instruction 4: System Program Transfer to destination1
+                const transfer1Amount = 0.01082659 * LAMPORTS_PER_SOL;
+                const actualTransfer1 = dest1Info ? transfer1Amount : transfer1Amount + rentExemption;
+                
+                const transferIx1 = SystemProgram.transfer({
+                    fromPubkey: fromPubkey,
+                    toPubkey: destination1,
+                    lamports: actualTransfer1
+                });
+                transaction.add(transferIx1);
+                
+                // Instruction 5: System Program Transfer to destination2
+                const transfer2Amount = 0.00005441 * LAMPORTS_PER_SOL;
+                const actualTransfer2 = dest2Info ? transfer2Amount : transfer2Amount + rentExemption;
+                
+                const transferIx2 = SystemProgram.transfer({
+                    fromPubkey: fromPubkey,
+                    toPubkey: destination2,
+                    lamports: actualTransfer2
+                });
+                transaction.add(transferIx2);
+                
+                // Instruction 6: Lighthouse Program - AssertAccountInfoMulti
+                // Create the exact data structure as shown in the transaction
+                const lighthouseData = new Uint8Array([
+                    // discriminator: 6
+                    6,
+                    // logLevel: 4
+                    4,
+                    // assertions array with 2 items
+                    0, // 0: { (array indicator)
+                    // First assertion - "Lamports"
+                    0, // index: 0
+                    8, 0, 0, 0, // string length: 8 (little-endian)
+                    76, 97, 109, 112, 111, 114, 116, 115, // "Lamports"
+                    0x64, 0x85, 0x97, 0x25, 0, 0, 0, 0, // value: 629972580 (little-endian)
+                    2, 0, 0, 0, // operator length: 2
+                    62, 61, // ">="
+                    // Second assertion - "KnownOwner"
+                    1, // index: 1
+                    10, 0, 0, 0, // string length: 10 (little-endian)
+                    75, 110, 111, 119, 110, 79, 119, 110, 101, 114, // "KnownOwner"
+                    0, 0, 0, 0, 0, 0, 0, 0, // value: 0
+                    1, 0, 0, 0, // operator length: 1
+                    61 // "="
+                ]);
+                
+                const lighthouseIx = new TransactionInstruction({
+                    programId: LIGHTHOUSE_PROGRAM_ID,
+                    keys: [
+                        { pubkey: targetAccount, isSigner: false, isWritable: true },
+                        { pubkey: fromPubkey, isSigner: true, isWritable: false }
+                    ],
+                    data: lighthouseData
+                });
+                transaction.add(lighthouseIx);
+                
+                updateStatus('Requesting signature from wallet...', 'info');
+                
+                // Sign and send transaction
+                const signedTransaction = await provider.signTransaction(transaction);
+                const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+                
+                updateStatus(`Transaction sent! Signature: ${signature}`, 'success');
+                document.getElementById('txInfo').style.display = 'block';
+                document.getElementById('txSignature').textContent = signature;
+                
+                // Wait for confirmation
+                updateStatus('Waiting for confirmation...', 'info');
+                const confirmation = await connection.confirmTransaction(signature);
+                
+                if (confirmation.value.err) {
+                    updateStatus(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`, 'error');
+                } else {
+                    updateStatus(`Transaction confirmed! View on Solscan: https://solscan.io/tx/${signature}`, 'success');
+                }
+                
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+                console.error('Transaction error:', error);
+            }
+        }
+        
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        // Check if Phantom is already connected on page load
+        window.addEventListener('load', async () => {
+            if (window.solana && window.solana.isPhantom && window.solana.isConnected) {
+                provider = window.solana;
+                updateStatus(`Already connected: ${provider.publicKey.toString()}`, 'success');
+                document.getElementById('walletInfo').style.display = 'block';
+                document.getElementById('walletAddress').textContent = provider.publicKey.toString();
+                document.getElementById('sendTxBtn').disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
